@@ -2,5 +2,11 @@ name: ParticleSensor
 description: ""
 ports: []
 bricks:
-- arduino:web_ui: {}
+  - arduino:web_ui:
+      host: "0.0.0.0"
+      allowed_hosts:
+        - "*"
+      cors:
+        allow_origins:
+          - "*"
 icon: 😀
