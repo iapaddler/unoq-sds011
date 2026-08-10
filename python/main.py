@@ -50,8 +50,7 @@ def on_get_fake():
         return {"ts": 0, "pm25": 1, "pm10": 2}
 
 # Get data and format for the UI graphs defined in JS
-def make_series(is25):
-    meas = snapshot()
+def make_series(is25, meas):
     if not meas:
         return []
 
@@ -66,6 +65,16 @@ def make_series(is25):
     return points
 
 def get_graph_configs():
+    meas = snapshot()
+    if not meas:
+        max_b = 10
+        max_a = 13
+    else:
+        # PM 10 max
+        max_b = max(row[2] for row in meas)
+        # PM 2.5 max
+        max_a = max(row[1] for row in meas)
+
     # Returns the full list of panel graphs. Called on every request; live data,
     # Defines the graphs for the JS code
     return [
@@ -73,10 +82,11 @@ def get_graph_configs():
             "title": "PM 2.5",
             "meta": "PM2.5 < 12 micrometers and no spikes > 35",
             "color": "#4fd1c5",
-            "xLabel": "Time (h:m)",
+            "xLabel": f"{datetime.now().strftime('%Y-%m-%d')}",
             "yLabel": "PM2.5 (µm)",
+            "yMax": max_a if max_a > 13 else 13,
             "xUnit": "min",
-            "data": make_series(True),
+            "data": make_series(True, meas),
         },
         {
             "title": "PM 10",
@@ -84,8 +94,9 @@ def get_graph_configs():
             "color": "#f6ad55",
             "xLabel": "Time (h:m)",
             "yLabel": "PM10 (µm)",
+            "yMax": max_b if max_b > 15 else 15,
             "xUnit": "min",
-            "data": make_series(False),
+            "data": make_series(False, meas),
         },
     ]
 
@@ -101,4 +112,3 @@ Bridge.provide("record_pm_values", record_pm_values)
 
 print("Starting App...")
 App.run()
-

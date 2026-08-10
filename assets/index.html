@@ -352,7 +352,7 @@ function renderPanel(graphConfigs) {
       color: cfg.color || '#4fd1c5',
       data: cfg.data || [],
       yMin: 0,
-      yMax: 13,
+      yMax: cfg.yMax || 13,
     });
   });
 }

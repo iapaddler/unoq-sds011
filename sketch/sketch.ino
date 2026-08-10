@@ -88,5 +88,5 @@ void loop() {
   digitalWrite(LED4_R, red);
   digitalWrite(LED4_G, green);
   digitalWrite(LED4_B, blue);
-  delay(50000);
+  delay(300000UL); // Delay for 5 minutes (300,000 ms)
 }
