@@ -14,6 +14,10 @@ void setup() {
   Serial1.begin(9600); // SDS011 always runs at 9600
   Bridge.begin();
   Monitor.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED4_R, OUTPUT);
+  pinMode(LED4_G, OUTPUT);
+  pinMode(LED4_B, OUTPUT);
   delay(1000);
   
   while (!Monitor && millis() < 500) {}
@@ -31,6 +35,10 @@ void setup() {
 }
 
 int loop_count = 0;
+int led = 0;
+int red = 0;
+int green = 1;
+int blue = 0;
 
 void loop() {
   float pm25, pm10;
@@ -70,5 +78,15 @@ void loop() {
   Bridge.notify("record_pm_values", pm25, pm10);
   
 
-  delay(1000);
+  led = !led;
+  red = !red;
+  green = !green;
+  blue = !blue;
+  Monitor.print("LED: ");
+  Monitor.println(led);
+  digitalWrite(LED_BUILTIN, led);
+  digitalWrite(LED4_R, red);
+  digitalWrite(LED4_G, green);
+  digitalWrite(LED4_B, blue);
+  delay(50000);
 }

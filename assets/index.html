@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particulate Matter Graphs</title>
+<style>
+  :root{
+    --bg: #0f1420;
+    --panel-bg: #161d2e;
+    --card-bg: #1c2438;
+    --grid-line: #2a3448;
+    --axis-line: #4a5570;
+    --text-main: #e6eaf2;
+    --text-dim: #8892a6;
+    --accent: #4fd1c5;
+    --accent2: #f6ad55;
+    --accent3: #90b6ff;
+    --accent4: #f687b3;
+    --accent5: #b794f4;
+    --accent6: #68d391;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text-main);
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 0 0 20px 0;
+  }
+
+  .panel {
+    background: var(--panel-bg);
+    border-radius: 14px;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 18px;
+    border: 1px solid #232c42;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border-radius: 10px;
+    padding: 14px 14px 8px 14px;
+    border: 1px solid #263050;
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 2px;
+  }
+
+  .card-meta {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .grid-line {
+    stroke: var(--grid-line);
+    stroke-width: 1;
+  }
+
+  .axis-line {
+    stroke: var(--axis-line);
+    stroke-width: 1.2;
+  }
+
+  .axis-label {
+    fill: var(--text-dim);
+    font-size: 11px;
+  }
+
+  .axis-title {
+    fill: var(--text-dim);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .data-line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .data-point {
+    stroke: var(--card-bg);
+    stroke-width: 1.5;
+  }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: #0b0f1a;
+    border: 1px solid #2f3a58;
+    color: var(--text-main);
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    z-index: 10;
+  }
+
+  .hover-dot {
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<h1>Particulate Matter Graphs</h1>
+<p class="subtitle">PM Value (µm) over Time — hover a point for details</p>
+
+<div class="panel" id="panel"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+/* =========================================================
+   LineGraph: a small, dependency-free SVG line chart.
+   - X axis: numeric "value" (µm), fixed domain [0, 50]
+   - Y axis: "time" (numeric, unit configurable), auto or fixed domain
+   - Supports axis labels/titles, grid, tooltips, multiple instances
+   ========================================================= */
+class LineGraph {
+  constructor(container, options) {
+    this.container = container;
+    this.opts = Object.assign({
+      width: 480,
+      height: 300,
+      margin: { top: 16, right: 20, bottom: 46, left: 56 },
+      xLabel: 'Time (HH:MM)',
+      yLabel: 'Value (µm)',
+      yMin: 0,
+      yMax: 13,
+      xTicks: 6,
+      yTicks: 6,
+      color: '#4fd1c5',
+      data: [],       // array of { value, time }
+      xMin: null,     // auto if null (time axis)
+      xMax: null,     // auto if null (time axis)
+    }, options);
+
+    this.tooltip = document.getElementById('tooltip');
+    this.render();
+  }
+
+  computeXDomain() {
+    const { data, xMin, xMax } = this.opts;
+    if (xMin !== null && xMax !== null) return [xMin, xMax];
+    const times = data.map(d => d.time);
+    let lo = Math.min(...times);
+    let hi = Math.max(...times);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.08;
+    return [Math.max(0, lo - pad), hi + pad];
+  }
+
+  render() {
+    const o = this.opts;
+    const { width, height, margin } = o;
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+    const [xMin, xMax] = this.computeXDomain();
+
+    const xScale = t => margin.left + ((t - xMin) / (xMax - xMin)) * innerW;
+    const yScale = v => margin.top + innerH - ((v - o.yMin) / (o.yMax - o.yMin)) * innerH;
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    // --- grid + axes ---
+    const xTickVals = this.ticks(xMin, xMax, o.xTicks);
+    const yTickVals = this.ticks(o.yMin, o.yMax, o.yTicks);
+
+    xTickVals.forEach(v => {
+      const x = xScale(v);
+      svg.appendChild(this.line(x, margin.top, x, margin.top + innerH, 'grid-line'));
+      const label = this.text(x, margin.top + innerH + 16, this.formatTime(v), 'axis-label', 'middle');
+      svg.appendChild(label);
+    });
+
+    yTickVals.forEach(v => {
+      const y = yScale(v);
+      svg.appendChild(this.line(margin.left, y, margin.left + innerW, y, 'grid-line'));
+      const label = this.text(margin.left - 10, y + 4, this.fmt(v), 'axis-label', 'end');
+      svg.appendChild(label);
+    });
+
+    // axis lines
+    svg.appendChild(this.line(margin.left, margin.top, margin.left, margin.top + innerH, 'axis-line'));
+    svg.appendChild(this.line(margin.left, margin.top + innerH, margin.left + innerW, margin.top + innerH, 'axis-line'));
+
+    // axis titles
+    const xTitle = this.text(margin.left + innerW / 2, height - 6, o.xLabel, 'axis-title', 'middle');
+    svg.appendChild(xTitle);
+
+    const yTitle = document.createElementNS(svgNS, 'text');
+    yTitle.setAttribute('class', 'axis-title');
+    yTitle.setAttribute('x', 0);
+    yTitle.setAttribute('y', 0);
+    yTitle.setAttribute('text-anchor', 'middle');
+    yTitle.setAttribute('transform', `translate(14, ${margin.top + innerH / 2}) rotate(-90)`);
+    yTitle.textContent = o.yLabel;
+    svg.appendChild(yTitle);
+
+    // --- data line ---
+    const sorted = [...o.data].sort((a, b) => a.time - b.time);
+    if (sorted.length > 0) {
+      const pathD = sorted.map((d, i) =>
+        `${i === 0 ? 'M' : 'L'} ${xScale(d.time)} ${yScale(d.value)}`
+      ).join(' ');
+      const path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('d', pathD);
+      path.setAttribute('class', 'data-line');
+      path.setAttribute('stroke', o.color);
+      svg.appendChild(path);
+
+      // points
+      sorted.forEach(d => {
+        const cx = xScale(d.time);
+        const cy = yScale(d.value);
+        const circle = document.createElementNS(svgNS, 'circle');
+        circle.setAttribute('cx', cx);
+        circle.setAttribute('cy', cy);
+        circle.setAttribute('r', 3.5);
+        circle.setAttribute('fill', o.color);
+        circle.setAttribute('class', 'data-point');
+        circle.addEventListener('mousemove', (e) => this.showTooltip(e, d));
+        circle.addEventListener('mouseleave', () => this.hideTooltip());
+        svg.appendChild(circle);
+      });
+    }
+
+    this.container.innerHTML = '';
+    this.container.appendChild(svg);
+  }
+
+  ticks(min, max, count) {
+    const step = (max - min) / count;
+    const result = [];
+    for (let i = 0; i <= count; i++) result.push(min + step * i);
+    return result;
+  }
+
+  fmt(v) {
+    return Math.abs(v) < 10 ? v.toFixed(1) : Math.round(v).toString();
+  }
+
+  // Renders x-axis time values. Default assumes `time` is epoch
+  // milliseconds (e.g. new Date(iso).getTime()) and shows local HH:MM.
+  // Pass opts.xTickFormat(v) to override.
+  formatTime(v) {
+    if (typeof this.opts.xTickFormat === 'function') return this.opts.xTickFormat(v);
+    const d = new Date(v);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+
+  line(x1, y1, x2, y2, cls) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    el.setAttribute('x1', x1);
+    el.setAttribute('y1', y1);
+    el.setAttribute('x2', x2);
+    el.setAttribute('y2', y2);
+    el.setAttribute('class', cls);
+    return el;
+  }
+
+  text(x, y, content, cls, anchor) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    el.setAttribute('x', x);
+    el.setAttribute('y', y);
+    el.setAttribute('class', cls);
+    el.setAttribute('text-anchor', anchor);
+    el.textContent = content;
+    return el;
+  }
+
+  showTooltip(evt, d) {
+    const t = this.tooltip;
+    t.style.opacity = 1;
+    t.style.left = (evt.pageX + 12) + 'px';
+    t.style.top = (evt.pageY - 12) + 'px';
+    t.textContent = `${this.formatTime(d.time)}  •  ${d.value.toFixed(1)} µm`;
+  }
+
+  hideTooltip() {
+    this.tooltip.style.opacity = 0;
+  }
+}
+
+/* =========================================================
+   Panel rendering — takes an array of graph configs:
+   [{ title, meta, color, xLabel, yLabel, xUnit, data: [{value,time}, ...] }, ...]
+   ========================================================= */
+function renderPanel(graphConfigs) {
+  const panel = document.getElementById('panel');
+  panel.innerHTML = '';
+
+  graphConfigs.forEach(cfg => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const title = document.createElement('div');
+    title.className = 'card-title';
+    title.textContent = cfg.title || '';
+    card.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'card-meta';
+    meta.textContent = cfg.meta || '';
+    card.appendChild(meta);
+
+    const chartHost = document.createElement('div');
+    card.appendChild(chartHost);
+    panel.appendChild(card);
+
+    new LineGraph(chartHost, {
+      xLabel: cfg.xLabel || 'Time (HH:MM)',
+      yLabel: cfg.yLabel || 'Value (µm)',
+      xUnit: cfg.xUnit || 's',
+      color: cfg.color || '#4fd1c5',
+      data: cfg.data || [],
+      yMin: 0,
+      yMax: 13,
+    });
+  });
+}
+
+/* =========================================================
+   Data loading.
+   Fetches data.json (written by a Python script — see below)
+   from the same folder as this file. Falls back to a small
+   built-in sample so the page still renders if data.json
+   is missing (e.g. opened before Python has run).
+   ========================================================= */
+const FALLBACK_CONFIGS = [
+  {
+    title: 'Sample Sensor',
+    meta: 'No data.json found — showing placeholder',
+    color: '#4fd1c5',
+    xLabel: 'Time (HH:MM)',
+    yLabel: 'Value (µm)',
+    xUnit: 's',
+    data: Array.from({ length: 10 }, (_, i) => ({
+      value: (i / 9) * 50,
+      time: i + Math.sin(i) * 0.5,
+    })),
+  },
+];
+
+fetch('/api/graphs')
+  .then(res => {
+    if (!res.ok) throw new Error('API not reachable');
+    return res.json();
+  })
+  .then(graphConfigs => renderPanel(graphConfigs))
+  .catch(() => renderPanel(FALLBACK_CONFIGS));
+</script>
+</body>
+</html>

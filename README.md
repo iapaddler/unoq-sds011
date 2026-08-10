@@ -8,7 +8,7 @@
 ### The Arduino MsgPack library is used for debug messages from the controller to the Linux host.
 ---
 
-### There are a few specifics that are either confusing or incorrect in the docs:
+### A few notes:
 * Use the Monitor interface to create serial messages from the controller 
   * Don't use the Serial interface directly for this
 * Use the Bridge interface to pass data between the controller and Linux 
