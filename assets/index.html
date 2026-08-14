@@ -251,7 +251,7 @@ class LineGraph {
         const circle = document.createElementNS(svgNS, 'circle');
         circle.setAttribute('cx', cx);
         circle.setAttribute('cy', cy);
-        circle.setAttribute('r', 3.5);
+        circle.setAttribute('r', 1.5);
         circle.setAttribute('fill', o.color);
         circle.setAttribute('class', 'data-point');
         circle.addEventListener('mousemove', (e) => this.showTooltip(e, d));

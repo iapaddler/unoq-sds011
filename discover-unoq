@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# dns-sd is a MacOS command
+# on linux avahi-browse is more or less equivalent. Requires the avahi-utils package
+
+# Notes for name formats:
+# ssh arduino@Donn-UnoQ.home.local
+# http://donn-unoq.home.local:7000/
+
+echo "Looking for the UnoQ host on the local network"
+dns-sd -t 4 -G v4 "Donn-UnoQ"
