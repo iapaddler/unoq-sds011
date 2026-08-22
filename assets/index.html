@@ -131,6 +131,34 @@
   .hover-dot {
     display: none;
   }
+
+  /* --- loading / empty / error states --- */
+  .state-card {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--text-dim);
+  }
+
+  .state-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+    line-height: 1;
+  }
+
+  .state-message {
+    font-size: 13px;
+  }
+
+  .state-icon.spin {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
 </style>
 </head>
 <body>
@@ -144,9 +172,12 @@
 <script>
 /* =========================================================
    LineGraph: a small, dependency-free SVG line chart.
-   - X axis: numeric "value" (µm), fixed domain [0, 50]
-   - Y axis: "time" (numeric, unit configurable), auto or fixed domain
+   - X axis: numeric "time" (epoch ms), domain auto or fixed
+   - Y axis: numeric "value" (µm), domain fixed [yMin, yMax]
    - Supports axis labels/titles, grid, tooltips, multiple instances
+   - X-axis ticks are chosen by INDEX into the sorted data array
+     (getLabelIndices), never by interpolating arbitrary time
+     values, so every label always corresponds to a real reading.
    ========================================================= */
 class LineGraph {
   constructor(container, options) {
@@ -182,6 +213,25 @@ class LineGraph {
     return [Math.max(0, lo - pad), hi + pad];
   }
 
+  // Picks at most `targetLabels` INDICES into a sorted-by-time
+  // array, always including the first and last point, so every
+  // x-axis label lands on a real data point instead of an
+  // interpolated (possibly nonexistent) time value.
+  //
+  // len=1   -> [0]                         (single label)
+  // len=10  -> e.g. [0,2,4,6,8,9]           (<=6 labels)
+  // len=100 -> e.g. [0,20,40,60,80,99]      (<=6 labels)
+  getLabelIndices(len, targetLabels = 6) {
+    if (len <= 1) return [0];
+    if (len <= targetLabels) return Array.from({ length: len }, (_, i) => i);
+    // ceil (not round) guarantees we never exceed targetLabels
+    const step = Math.max(1, Math.ceil((len - 1) / (targetLabels - 1)));
+    const indices = [];
+    for (let i = 0; i < len; i += step) indices.push(i);
+    if (indices[indices.length - 1] !== len - 1) indices.push(len - 1);
+    return indices;
+  }
+
   render() {
     const o = this.opts;
     const { width, height, margin } = o;
@@ -198,13 +248,15 @@ class LineGraph {
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
     // --- grid + axes ---
-    const xTickVals = this.ticks(xMin, xMax, o.xTicks);
+    const sorted = [...o.data].sort((a, b) => a.time - b.time);
+    const labelIdx = this.getLabelIndices(sorted.length, o.xTicks);
     const yTickVals = this.ticks(o.yMin, o.yMax, o.yTicks);
 
-    xTickVals.forEach(v => {
-      const x = xScale(v);
+    labelIdx.forEach(i => {
+      const d = sorted[i];
+      const x = xScale(d.time);
       svg.appendChild(this.line(x, margin.top, x, margin.top + innerH, 'grid-line'));
-      const label = this.text(x, margin.top + innerH + 16, this.formatTime(v), 'axis-label', 'middle');
+      const label = this.text(x, margin.top + innerH + 16, this.formatTime(d.time), 'axis-label', 'middle');
       svg.appendChild(label);
     });
 
@@ -233,7 +285,6 @@ class LineGraph {
     svg.appendChild(yTitle);
 
     // --- data line ---
-    const sorted = [...o.data].sort((a, b) => a.time - b.time);
     if (sorted.length > 0) {
       const pathD = sorted.map((d, i) =>
         `${i === 0 ? 'M' : 'L'} ${xScale(d.time)} ${yScale(d.value)}`
@@ -275,7 +326,7 @@ class LineGraph {
     return Math.abs(v) < 10 ? v.toFixed(1) : Math.round(v).toString();
   }
 
-  // Renders x-axis time values. Default assumes `time` is epoch
+  // Renders x-axis time values. Assumes `time` is epoch
   // milliseconds (e.g. new Date(iso).getTime()) and shows local HH:MM.
   // Pass opts.xTickFormat(v) to override.
   formatTime(v) {
@@ -358,34 +409,73 @@ function renderPanel(graphConfigs) {
 }
 
 /* =========================================================
-   Data loading.
-   Fetches data.json (written by a Python script — see below)
-   from the same folder as this file. Falls back to a small
-   built-in sample so the page still renders if data.json
-   is missing (e.g. opened before Python has run).
+   Loading / empty / error state rendering.
+   Used instead of fabricated placeholder data so a real
+   failure or an empty dataset is never mistaken for a
+   working chart full of real readings.
    ========================================================= */
-const FALLBACK_CONFIGS = [
-  {
-    title: 'Sample Sensor',
-    meta: 'No data.json found — showing placeholder',
-    color: '#4fd1c5',
-    xLabel: 'Time (HH:MM)',
-    yLabel: 'Value (µm)',
-    xUnit: 's',
-    data: Array.from({ length: 10 }, (_, i) => ({
-      value: (i / 9) * 50,
-      time: i + Math.sin(i) * 0.5,
-    })),
-  },
-];
+function renderState(kind, message) {
+  const panel = document.getElementById('panel');
+  panel.innerHTML = '';
 
-fetch('/api/graphs')
-  .then(res => {
-    if (!res.ok) throw new Error('API not reachable');
-    return res.json();
-  })
-  .then(graphConfigs => renderPanel(graphConfigs))
-  .catch(() => renderPanel(FALLBACK_CONFIGS));
+  const icons = { loading: '⏳', empty: '📭', error: '⚠️' };
+
+  const card = document.createElement('div');
+  card.className = 'card state-card';
+
+  const icon = document.createElement('div');
+  icon.className = 'state-icon' + (kind === 'loading' ? ' spin' : '');
+  icon.textContent = icons[kind] || '';
+  card.appendChild(icon);
+
+  const msg = document.createElement('div');
+  msg.className = 'state-message';
+  msg.textContent = message;
+  card.appendChild(msg);
+
+  panel.appendChild(card);
+}
+
+/* =========================================================
+   Data loading.
+   Fetches /api/graphs (backed by data.json, written by a
+   Python script — see below) and renders the panel.
+   On failure, retries automatically rather than falling
+   back to fabricated sample data.
+   ========================================================= */
+let retryDelayMs = 3000;
+
+function loadGraphs() {
+  renderState('loading', 'Loading sensor data…');
+
+  fetch('/api/graphs')
+    .then(res => {
+      if (!res.ok) throw new Error(`API returned ${res.status}`);
+      return res.json();
+    })
+    .then(graphConfigs => {
+      const hasData = Array.isArray(graphConfigs) &&
+        graphConfigs.some(cfg => (cfg.data || []).length > 0);
+
+      if (!hasData) {
+        renderState('empty', 'No readings yet — waiting for the first sensor sample.');
+        // keep polling in case data starts arriving
+        setTimeout(loadGraphs, retryDelayMs);
+        return;
+      }
+
+      retryDelayMs = 3000; // reset backoff after a success
+      renderPanel(graphConfigs);
+    })
+    .catch(err => {
+      console.error('Failed to load graph data:', err);
+      renderState('error', 'Could not load sensor data. Retrying…');
+      retryDelayMs = Math.min(retryDelayMs * 1.5, 30000); // gentle backoff, capped at 30s
+      setTimeout(loadGraphs, retryDelayMs);
+    });
+}
+
+loadGraphs();
 </script>
 </body>
 </html>

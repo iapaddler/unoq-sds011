@@ -8,7 +8,6 @@ from collections import deque
 from arduino.app_bricks.web_ui import WebUI
 from arduino.app_utils import App, Bridge
 
-got_data = False
 # Fixed-size rolling window — holds last N readings
 MAX_READINGS = 100
 que = deque(maxlen=MAX_READINGS)
@@ -34,20 +33,9 @@ def snapshot():
 
 
 def record_pm_values(pm25: float, pm10: float):
-    global got_data
     record(pm25, pm10)
     # Will make these debug statements with config shortly...
     print("record_pm_values", round(pm25, 2), "and", round(pm10, 2))
-    ts, a, b = que[-1]          # newest
-    got_data = True
-
-def on_get_fake():
-    if got_data:
-        print("Returning resources...")
-        ts, p25, p10 = que[-1]
-        return {"ts": ts, "pm25": p25, "pm10": p10}
-    else:
-        return {"ts": 0, "pm25": 1, "pm10": 2}
 
 # Get data and format for the UI graphs defined in JS
 def make_series(is25, meas):
@@ -62,6 +50,7 @@ def make_series(is25, meas):
             "time": epoch_ms,
             "value": a if is25 else b,
         })
+
     return points
 
 def get_graph_configs():
