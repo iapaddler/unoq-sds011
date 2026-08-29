@@ -93,6 +93,8 @@ def get_graph_configs():
 def on_get_graphs():
     return get_graph_configs()
 
+que.clear()
+
 ui = WebUI()
 ui.expose_api("GET", "/api/graphs", on_get_graphs)
 
